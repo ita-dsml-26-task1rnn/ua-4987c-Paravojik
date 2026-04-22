@@ -108,7 +108,17 @@ def make_windows(series: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarra
     Keras RNN layers expect inputs shaped as (batch, time, features).
     Here features=1 because the time series is univariate.
     """
-    raise NotImplementedError
+
+    X, y = [], []
+    for t in range(window, len(series)):
+        X.append(series[t - window : t])
+        y.append(series[t])
+    X = np.array(X).reshape(-1, window, 1)
+    y = np.array(y).reshape(-1, 1)
+    return X, y
+
+    
+
 
 
 def time_split(
@@ -148,7 +158,16 @@ def time_split(
     - Do NOT shuffle.
     - The split is performed on already-windowed samples.
     """
-    raise NotImplementedError
+    n= len(X)
+    n_train = int(n * train_frac)
+    n_val = int(n * val_frac)
+    n_test = n - n_train - n_val
+    if n_train <= 0 or n_val <= 0 or n_test <= 0:
+        raise ValueError("Invalid split fractions resulting in empty splits.")
+    X_train, y_train = X[:n_train], y[:n_train]
+    X_val, y_val = X[n_train : n_train + n_val], y[n_train : n_train + n_val]
+    X_test, y_test = X[n_train + n_val :], y[n_train + n_val :]
+    return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
 
 def build_model(
@@ -186,7 +205,17 @@ def build_model(
     -----
     You may change the architecture slightly, but keep I/O shapes the same.
     """
-    raise NotImplementedError
+    model = tf.keras.Sequential(
+        [
+            tf.keras.layers.Input(shape=(window, 1)),
+            tf.keras.layers.LSTM(n_units),
+            tf.keras.layers.Dropout(dropout),
+            tf.keras.layers.Dense(dense_units, activation="relu"),
+            tf.keras.layers.Dense(1),
+        ]
+    )
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate), loss="mse", metrics=["mae"])
+    return model
 
 
 def train_model(
@@ -245,7 +274,27 @@ def train_model(
     - Prefer using EarlyStopping (optional) to reduce overfitting.
     - Keep the function deterministic as much as possible.
     """
-    raise NotImplementedError
+    # Create windows
+    X, y = make_windows(series, window)
+
+    # Time-based split
+    (X_train, y_train), (X_val, y_val), (X_test, y_test) = time_split(X, y, train_frac, val_frac)
+
+    # Build model
+    model = build_model(window)
+
+    # Fit model
+    history = model.fit(
+        X_train,
+        y_train,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=batch_size,
+        verbose=verbose,
+        shuffle=False
+    )
+
+    return model, X_test, y_test, history
 
 
 # ----------------------------
